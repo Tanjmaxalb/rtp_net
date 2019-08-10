@@ -1,0 +1,49 @@
+# [decodebin]    - auto-magically constructs a decoding pipeline using available 
+#                  decoders and demuxers via auto-plugging.
+# [x264enc]      - element encodes raw video into H264 compressed data, also 
+#                  otherwise known as MPEG-4 AVC
+# [rtph264pay]   - payload-encode H264 video into RTP packets
+# [videoconvert] - Convert video frames between a great variety of video 
+#                  formats
+# [mpegtsmux]    - mpegtsmux muxes different streams into an MPEG Transport 
+#                  stream
+#
+# Input: red21.mp4 (210M)
+# Output: (103M)
+#       pub: decodebin ! x264enc ! rtph264pay
+#       sub: rtph264depay ! decodebin ! videoconvert ! x264enc ! mpegtsmux
+
+version: "3"
+services:
+    publisher:
+        container_name: publisher
+        image: hmlatapie/gstreamer
+        volumes:
+            - ./red21.mp4:/input.mp4
+        command: >
+            bash -c "gst-launch-1.0  filesrc location=/input.mp4 ! 
+            decodebin ! x264enc ! rtph264pay ! 
+            udpsink host=192.168.21.10 port=7001"
+        networks:
+            vcomm_net:
+                ipv4_address: 192.168.21.11
+    subscriber:
+        container_name: subscriber
+        image: hmlatapie/gstreamer
+        volumes:
+            - ./result:/outputs
+        depends_on:
+            - publisher
+        command: >
+            bash -c "gst-launch-1.0 udpsrc port=7001 
+            caps = \"application/x-rtp, media=(string)video, clock-rate=(int)90000, encoding-name=(string)H264, payload=(int)96\" !
+            rtph264depay ! decodebin ! x264enc ! avimux ! 
+            filesink location=/outputs/output.avi"
+        networks:
+            vcomm_net:
+                ipv4_address: 192.168.21.10
+networks:
+  vcomm_net:
+    ipam:
+      config:
+      - subnet: 192.168.21.0/24
